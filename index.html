@@ -17,6 +17,7 @@
     @media(max-width:1000px){.map-layout{grid-template-columns:1fr}.map-panel{min-height:auto}.map-acts{max-height:250px}}
     @media(max-width:620px){.shell{padding-left:14px;padding-right:14px}.mast .shell{padding-top:30px;padding-bottom:34px}.mast p{font-size:15px}.section{padding-top:34px}.section-head{display:block}.section h2{margin-bottom:7px}.stage-group{padding:15px}.cards{grid-template-columns:1fr}.map-canvas{min-width:800px}.grid-wrap{max-height:68vh}.controls .count{width:100%;margin-left:0}}
     .plan-heading{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin-top:25px}.plan-heading h3{font:700 24px Georgia,"Songti SC",serif;margin:0}.pdf-button{border:1px solid #315b46;border-radius:8px;background:#315b46;color:white;padding:8px 13px;font-weight:700}.pdf-button:hover{background:#244934}.pdf-button:disabled{opacity:.45}.pdf-hint{color:var(--muted);font-size:12px}.print-plan{display:none}
+    .stage-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.stage-reset{border:1px solid #b8cdbd;border-radius:8px;background:#f0f7f0;color:#315b46;padding:5px 9px;font-size:12px;font-weight:700}.stage-reset:hover{background:#dceee1}.stage-reset:disabled{opacity:.45;cursor:not-allowed}
     @media print{@page{size:A4;margin:16mm}body{background:#fff;color:#222;font:12pt/1.5 "PingFang SC","Microsoft YaHei",Arial,sans-serif}body>*:not(#print-plan){display:none!important}#print-plan{display:block!important}.print-plan h1{font-size:23pt;margin:0 0 3mm}.print-plan .print-date{color:#555;margin:0 0 10mm}.print-plan table{width:100%;border-collapse:collapse;table-layout:fixed}.print-plan th,.print-plan td{text-align:left;vertical-align:top;border-bottom:1px solid #bbb;padding:4mm 2mm;overflow-wrap:anywhere}.print-plan th:first-child,.print-plan td:first-child{width:25mm;white-space:nowrap}.print-plan th:nth-child(2),.print-plan td:nth-child(2){width:52mm}.print-plan tr{break-inside:avoid}.print-plan .print-note{font-size:9pt;color:#555;margin-top:9mm}}
   </style>
 </head>
@@ -58,15 +59,19 @@
     const times=[...new Set(timed.map(s=>s.time))];
     const gridStages=DATA.stages.filter(s=>timed.some(x=>x.stage===s.name));
     const storageKey='trf-2026-10-10-selected-v1';
-    const wantStorageKey='trf-2026-10-10-wanted-v1';
+    const wantStorageKey='trf-2026-10-10-wanted-v2';
+    const legacyWantStorageKey='trf-2026-10-10-wanted-v1';
+    function wantKey(stage,name){return stage+'\u0000'+name}
+    function hasWanted(stage,name){return wanted.has(wantKey(stage,name))}
     let chosen={};
     try{chosen=JSON.parse(localStorage.getItem(storageKey)||'{}')||{}}catch(_){chosen={}}
     function validChosen(){const seen=new Set();for(const [t,v] of Object.entries(chosen)){if(!timed.some(s=>s.time===t&&s.name===v.name&&s.stage===v.stage)||seen.has(v.name))delete chosen[t];else seen.add(v.name)}}validChosen();
     let wanted=new Set();
-    try{wanted=new Set(JSON.parse(localStorage.getItem(wantStorageKey)||'[]').filter(name=>EVENTS.has(name)))}catch(_){wanted=new Set()}
-    for(const v of Object.values(chosen))wanted.add(v.name);
+    try{const saved=localStorage.getItem(wantStorageKey);if(saved!==null){for(const key of JSON.parse(saved)){if(typeof key!=='string')continue;const [stage,name]=key.split('\u0000');if(DATA.slots.some(s=>s.stage===stage&&s.name===name))wanted.add(key)}}else{const names=new Set(JSON.parse(localStorage.getItem(legacyWantStorageKey)||'[]'));for(const s of DATA.slots)if(names.has(s.name))wanted.add(wantKey(s.stage,s.name))}}catch(_){wanted=new Set()}
+    for(const v of Object.values(chosen))wanted.add(wantKey(v.stage,v.name));
     function save(){try{localStorage.setItem(storageKey,JSON.stringify(chosen))}catch(_){}}
     function saveWanted(){try{localStorage.setItem(wantStorageKey,JSON.stringify([...wanted]))}catch(_){}}
+    saveWanted();
     function el(tag,cls,text){const n=document.createElement(tag);if(cls)n.className=cls;if(text!==undefined)n.textContent=text;return n}
     function color(name){let n=0;for(const ch of name)n=(n*31+ch.codePointAt(0))>>>0;return n%360}
     function stageSlots(name){return DATA.slots.filter(s=>s.stage===name)}
@@ -75,8 +80,9 @@
     function selectedElsewhere(slot){return Object.entries(chosen).some(([t,v])=>v.name===slot.name&&(t!==slot.time||v.stage!==slot.stage))}
     function isDisabled(slot){const at=chosen[slot.time];return !!(at&&(at.name!==slot.name||at.stage!==slot.stage))||selectedElsewhere(slot)}
     function isSelected(slot){return chosen[slot.time]?.name===slot.name&&chosen[slot.time]?.stage===slot.stage}
-    function toggle(slot){if(slot.time==='全天')return;if(isSelected(slot))delete chosen[slot.time];else if(!isDisabled(slot)){chosen[slot.time]={name:slot.name,stage:slot.stage};wanted.add(slot.name);saveWanted();refreshWantedUI()}save();renderGrid();renderItinerary();refreshTimeChips()}
-    function toggleWant(name,checked){if(checked)wanted.add(name);else{wanted.delete(name);for(const [time,slot] of Object.entries(chosen))if(slot.name===name)delete chosen[time];save()}saveWanted();refreshWantedUI();renderGrid();renderItinerary();refreshTimeChips()}
+    function toggle(slot){if(slot.time==='全天')return;if(isSelected(slot))delete chosen[slot.time];else if(!isDisabled(slot)){chosen[slot.time]={name:slot.name,stage:slot.stage};wanted.add(wantKey(slot.stage,slot.name));saveWanted();refreshWantedUI()}save();renderGrid();renderItinerary();refreshTimeChips()}
+    function toggleWant(stage,name,checked){const key=wantKey(stage,name);if(checked)wanted.add(key);else{wanted.delete(key);for(const [time,slot] of Object.entries(chosen))if(slot.stage===stage&&slot.name===name)delete chosen[time];save()}saveWanted();refreshWantedUI();renderGrid();renderItinerary();refreshTimeChips()}
+    function resetStage(stage){for(const name of groupedStage(stage).keys())wanted.delete(wantKey(stage,name));for(const [time,slot] of Object.entries(chosen))if(slot.stage===stage)delete chosen[time];save();saveWanted();refreshWantedUI();renderGrid();renderItinerary();refreshTimeChips()}
     function timeLabel(t){return t==='全天'?'全天流动':t.replace(' AM','').replace(' PM','')+(t.includes('PM')?' PM':' AM')}
     function showStage(name){const s=STAGES.get(name);if(!s)return;document.querySelectorAll('.pin').forEach(p=>p.classList.toggle('active',p.dataset.stage===name));const panel=document.getElementById('map-panel');panel.replaceChildren();const h=el('h3','',name),zone=el('span','zone',s.zone),p=el('p','',s.detail+' · '+s.confidence);panel.append(h,zone,p);const list=el('div','map-acts');for(const [act,ts] of groupedStage(name)){const row=el('div','map-act');row.append(el('strong','',act),el('span','',ts.map(timeLabel).join(' / ')));list.append(row)}panel.append(list);const link=el('a','event-source','查看这个地点的节目 ↓');link.href='#'+stageId(name);panel.append(link)}
     function renderMap(){document.getElementById('map-image').src=DATA.mapImage;const canvas=document.getElementById('map-canvas');const unknown=document.getElementById('unplaced');unknown.append(el('span','tiny','未在旧图上确认：'));for(const s of DATA.stages){if(s.pin){const p=el('button','pin','●');p.type='button';p.dataset.stage=s.name;p.style.left=s.pin[0]+'%';p.style.top=s.pin[1]+'%';p.title=s.name;p.setAttribute('aria-label','查看 '+s.name+' 的节目');p.addEventListener('pointerenter',()=>showStage(s.name));p.addEventListener('focus',()=>showStage(s.name));p.addEventListener('click',()=>showStage(s.name));canvas.append(p)}else{const b=el('button','',s.name);b.type='button';b.addEventListener('click',()=>showStage(s.name));unknown.append(b)}}showStage('The Arena')}
@@ -88,7 +94,7 @@
       const img=el('img','photo');img.src=e.image;img.alt=e.hasRealImage?act+' 官方节目图片':act+' 图片占位';img.loading='lazy';c.append(img);
       const body=el('div','body'),meta=el('div','meta');meta.append(el('span','pill',e.category));
       const rating=el('span','rating','★'.repeat(e.score)+'☆'.repeat(5-e.score));rating.setAttribute('aria-label','推荐指数 '+e.score+' 星');meta.append(rating,el('span','score',e.score+'/5'));
-      const want=el('label','want-toggle'),box=el('input');box.type='checkbox';box.dataset.act=act;box.checked=wanted.has(act);box.setAttribute('aria-label','想看 '+act);box.addEventListener('change',()=>toggleWant(act,box.checked));want.append(box,el('span','','想看'));
+      const want=el('label','want-toggle'),box=el('input');box.type='checkbox';box.dataset.act=act;box.dataset.stage=stage;box.checked=hasWanted(stage,act);box.setAttribute('aria-label','想看 '+act+' · '+stage);box.addEventListener('change',()=>toggleWant(stage,act,box.checked));want.append(box,el('span','','想看'));
       body.append(meta,el('h4','',act),el('p','summary',e.summary),want);
       const timebox=el('div','times');for(const t of ts){if(t==='全天'){timebox.append(el('span','time-chip','全天流动'));continue}const b=el('button','time-chip',timeLabel(t));b.type='button';b.dataset.time=t;b.dataset.act=act;b.dataset.stage=stage;b.addEventListener('click',()=>toggle({time:t,name:act,stage}));timebox.append(b)}body.append(timebox);
       if(!e.hasRealImage)body.append(el('div','photo-note','图片：占位图，尚无可核实节目照'));
@@ -98,19 +104,19 @@
       const q=document.getElementById('event-search').value.trim().toLocaleLowerCase(),zone=document.getElementById('zone-filter').value,score=Number(document.getElementById('score-filter').value),host=document.getElementById('group-list');host.replaceChildren();let found=0;
       for(const s of DATA.stages){if(zone&&s.zone!==zone)continue;const acts=[...groupedStage(s.name)].filter(([name])=>{const e=EVENTS.get(name);return e&&e.score>=score&&(!q||(name+' '+s.name+' '+s.zone+' '+e.category+' '+e.summary).toLocaleLowerCase().includes(q))});if(!acts.length)continue;found+=acts.length;
         const section=el('section','stage-group');section.id=stageId(s.name);section.dataset.stage=s.name;
-        const title=el('div','stage-title'),left=el('div'),nameLine=el('div','stage-name-line'),tags=el('div','want-tags');nameLine.append(el('h3','',s.name),tags);left.append(nameLine,el('p','',s.zone+' · '+s.detail));title.append(left,el('span','stage-count',acts.length+' 个节目'));section.append(title);
+        const title=el('div','stage-title'),left=el('div'),nameLine=el('div','stage-name-line'),tags=el('div','want-tags'),actions=el('div','stage-actions'),reset=el('button','stage-reset','清空本舞台想看');reset.type='button';reset.setAttribute('aria-label','清空 '+s.name+' 的所有想看节目');reset.addEventListener('click',()=>resetStage(s.name));nameLine.append(el('h3','',s.name),tags);left.append(nameLine,el('p','',s.zone+' · '+s.detail));actions.append(reset,el('span','stage-count',acts.length+' 个节目'));title.append(left,actions);section.append(title);
         const cards=el('div','cards');for(const [name,ts] of acts){const c=card(s.name,name,ts);if(c)cards.append(c)}section.append(cards);host.append(section)}
       document.getElementById('filter-count').textContent='当前显示 '+found+' 个节目条目';if(!found)host.append(el('p','empty-plan','没有符合筛选条件的节目。'));refreshWantedUI();refreshTimeChips()
     }
     function refreshWantedUI(){
       document.getElementById('want-count').textContent=wanted.size;
-      document.querySelectorAll('.want-toggle input[data-act]').forEach(box=>{box.checked=wanted.has(box.dataset.act)});
-      document.querySelectorAll('.stage-group').forEach(section=>{const tags=section.querySelector('.want-tags');tags.replaceChildren();for(const name of groupedStage(section.dataset.stage).keys())if(wanted.has(name))tags.append(el('span','want-tag','✓ '+name))})
+      document.querySelectorAll('.want-toggle input[data-act]').forEach(box=>{box.checked=hasWanted(box.dataset.stage,box.dataset.act)});
+      document.querySelectorAll('.stage-group').forEach(section=>{const tags=section.querySelector('.want-tags'),stage=section.dataset.stage;tags.replaceChildren();let count=0;for(const name of groupedStage(stage).keys())if(hasWanted(stage,name)){tags.append(el('span','want-tag','✓ '+name));count++}section.querySelector('.stage-reset').disabled=!count})
     }
     function refreshTimeChips(){document.querySelectorAll('.time-chip[data-act]').forEach(b=>{const s={time:b.dataset.time,name:b.dataset.act,stage:b.dataset.stage};b.disabled=isDisabled(s);b.classList.toggle('selected',isSelected(s));b.setAttribute('aria-pressed',String(isSelected(s)))})}
     function renderGrid(){
       const z=document.getElementById('grid-zone').value,only=document.getElementById('want-only').checked;
-      const visible=timed.filter(s=>(!only||wanted.has(s.name))&&(!z||STAGES.get(s.stage)?.zone===z));
+      const visible=timed.filter(s=>(!only||hasWanted(s.stage,s.name))&&(!z||STAGES.get(s.stage)?.zone===z));
       const columns=gridStages.filter(s=>(!z||s.zone===z)&&(!only||visible.some(v=>v.stage===s.name)));
       const rowTimes=only?times.filter(t=>visible.some(s=>s.time===t)):times;
       const table=document.getElementById('schedule-table');table.replaceChildren();const thead=el('thead'),hr=el('tr');hr.append(el('th','','时间'));for(const s of columns)hr.append(el('th','',s.name));hr.append(el('th','','已选地点 + 时间'));thead.append(hr);table.append(thead);
